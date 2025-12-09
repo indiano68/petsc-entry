@@ -1,0 +1,10 @@
+-ksp_converged_reason 
+-pc_type hpddm 
+-pc_hpddm_levels_1_sub_pc_type lu 
+-pc_hpddm_levels_1_eps_nev 20 
+-pc_hpddm_coarse_p 2 
+-pc_hpddm_coarse_pc_type redundant 
+-ksp_type fgmres 
+-pc_hpddm_coarse_mat_type baij 
+-pc_hpddm_log_separate false 
+# -pc_hpddm_coarse_correction additive

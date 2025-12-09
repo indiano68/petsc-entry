@@ -22,12 +22,12 @@ PATH="$PATH":"$PETSC_DIR/$PETSC_ARCH/lib"
 DATAFILESPATH=${DATAFILESPATH:-"$PETSC_DIR/../datafiles"}
 executable_root="bin/$PETSC_ARCH"
 
-args="-options_file opts/noiseless.opt"
+args="-options_file opts/ex76.opt"
 load_dir="-load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO"
 mpiexec=${PETSCMPIEXEC:-"$PETSC_DIR/$PETSC_ARCH/bin/mpiexec"}
 
 
-executable_name='noiseless_cpu'
+executable_name='ex76'
 debugger_args=''
 log_args=''
 nsize_in=${nsize:-4}
@@ -38,9 +38,9 @@ fi
 if [ "$use_debugger" == true ]; then
   debugger_args="-stop_for_debugger"
 fi
-if [ "$use_cuda_binary" == true ]; then
-  executable_name="noiseless_gpu"
-fi
+# if [ "$use_cuda_binary" == true ]; then
+#   executable_name="noiseless_gpu"
+# fi
 
 debugger_available=false
 debugger_exec=''

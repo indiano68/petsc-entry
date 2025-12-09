@@ -1,0 +1,8 @@
+-pc_type hpddm 
+-pc_hpddm_coarse_correction balanced 
+-pc_hpddm_coarse_mat_type aij 
+-pc_hpddm_levels_eps_nev 1 
+-pc_hpddm_levels_sub_pc_type lu 
+-ksp_monitor 
+-initial_dm_plex_simplex 0 
+-petscpartitioner_type simple

@@ -1,0 +1,14 @@
+-pde_type Elasticity 
+-cells 12,12 
+-dim 2 
+-ksp_converged_reason 
+-pc_type hpddm 
+-pc_hpddm_coarse_correction balanced 
+-pc_hpddm_levels_1_pc_type asm 
+-pc_hpddm_levels_1_pc_asm_overlap 1 
+-pc_hpddm_levels_1_pc_asm_type basic 
+-pc_hpddm_levels_1_sub_pc_type cholesky 
+-pc_hpddm_levels_1_eps_nev 10 
+-pc_hpddm_levels_1_st_pc_factor_shift_type INBLOCKS
+-mat_is_localmat_type aij 
+-pc_hpddm_coarse_mat_type baij
