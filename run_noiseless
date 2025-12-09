@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+ARCH=${PETSC_ARCH:-'arch-debug'}
+PATH="$PATH":"/Users/erikfabrizzi/Workspace/LIP6-SWE/repos/petsc/$ARCH/lib"
+
+executable_root="tests"
+executable_name='noiseless_cpu'
+suffix='_debug'
+if [ "$ARCH" == "arch-opt" ]; then 
+  suffix='_opt'
+fi
+
+executable="$executable_root/$executable_name$suffix"
+DATAFILESPATH=${DATAFILESPATH:-"/Users/erikfabrizzi/Workspace/LIP6-SWE/repos/petsc/../datafiles"}
+
+args="-ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type lu -pc_hpddm_levels_1_eps_nev 20 -pc_hpddm_coarse_p 2 -pc_hpddm_coarse_pc_type redundant -ksp_type fgmres -pc_hpddm_coarse_mat_type baij -pc_hpddm_log_separate false -pc_hpddm_coarse_correction additive -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO"
+
+mpiexec=${PETSCMPIEXEC:-"/Users/erikfabrizzi/Workspace/LIP6-SWE/repos/petsc/$ARCH/bin/mpiexec"}
+
+debugger_args=''
+if ([ -n "$1" ] || [ -n "$2" ] || [ -n "$3" ]) && ([ "$1" = "-d" ] || [ "$2" = "-d" ] || [ "$3" = "-d" ]);then
+  debugger_args="-stop_for_debugger"
+fi
+log_args=''
+if ([ -n "$1" ] || [ -n "$2" ] || [ -n "$3" ]) && ([ "$1" = "-l" ] || [ "$2" = "-l" ] || [ "$3" = "-l" ]);then
+  log_args='-log_view'
+fi
+
+nsize_in=${nsize:-4}
+if ([ -n "$1" ] || [ -n "$2" ] || [ -n "$3" ]) && ([ "$1" = "-d" ] || [ "$2" = "-d" ] || [ "$3" = "-d" ]);then
+  if ! [ -e "temp_output" ]; then
+    ${mpiexec} -n ${nsize_in} ${executable} ${args} ${debugger_args} ${log_args} > temp_output &
+  else
+    echo 'Temp output exists.. maybe another lauch is already in progress'
+  fi
+  sleep 0.5
+  pid="$(grep '\[0\]' temp_output| awk '{print $NF}')"
+  if ! [ -z $(ps aux | grep -v grep| grep $pid) ]; then 
+    lldb -p $pid
+    sleep 0.5
+    cat temp_output
+    rm temp_output
+  else
+    echo 'Could not find process to attach to!'
+  fi
+else 
+  ${mpiexec} -n ${nsize_in} ${executable} ${args} ${debugger_args} ${log_args}
+fi
+

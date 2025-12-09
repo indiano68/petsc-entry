@@ -1,0 +1,4 @@
+tests-build/*
+tests/noiselesss_cpu_*
+tests/*.dSYM
+.cache
