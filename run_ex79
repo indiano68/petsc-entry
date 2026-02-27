@@ -23,7 +23,7 @@ DATAFILESPATH=${DATAFILESPATH:-"$PETSC_DIR/../datafiles"}
 executable_root="bin/$PETSC_ARCH"
 
 args="-options_file opts/ex79.opt"
-load_dir="-load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO"
+load_dir=""
 mpiexec=${PETSCMPIEXEC:-"$PETSC_DIR/$PETSC_ARCH/bin/mpiexec"}
 
 
