@@ -29,23 +29,25 @@ done
 export PATH="$PATH:$PETSC_DIR/$PETSC_ARCH/lib"
 executable_root="bin/$PETSC_ARCH"
 
-executable_name="${executable:-ex76}"
-nsize_in="${nsize:-4}"
+executable_name="${ex:-ex76}"
+nsize_in="${n:-4}"
 mpiexec="${PETSCMPIEXEC:-$PETSC_DIR/$PETSC_ARCH/bin/mpiexec}"
 
 debugger_args=()
 if [[ "$use_debugger" == true ]]; then
     debugger_args+=("-stop_for_debugger")
 fi
-
+options_file_args=()
+if [ -f "./opts/$executable_name.opt" ]; then
+    options_file_args=(-options_file "opts/$executable_name.opt")
+fi
 cmd=(
     "$mpiexec"
     -n "$nsize_in"
     "$executable_root/$executable_name"
-    -options_file "opts/$executable_name.opt"
     ${debugger_args+"${debugger_args[@]}"}
+    ${options_file_args+"${options_file_args[@]}"}
 )
-
 find_debugger() {
     if command -v lldb >/dev/null 2>&1; then
         printf '%s\n' "lldb"
@@ -99,7 +101,7 @@ if [[ "$use_debugger" == true ]]; then
         exit 1
     }
 
-    temp_output="$(mktemp -t ex76-debug.XXXXXX)"
+    temp_output="$(mktemp -t $executable_name-debug.XXXXXX)"
     echo "Launching under debugger mode..."
     echo "Output is being captured in: $temp_output"
 
