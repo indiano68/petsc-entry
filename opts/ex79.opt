@@ -1,4 +1,4 @@
 -ksp_converged_reason 
 -ksp_type hpddm 
--mat_type aijcusparse 
+-mat_type aij
 -pc_type hpddm

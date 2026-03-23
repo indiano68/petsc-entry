@@ -1,5 +1,6 @@
 -ksp_monitor 
 -ksp_rtol 1e-4 
+-load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO 
 -fieldsplit_ksp_max_it 100 
 -fieldsplit_pc_hpddm_levels_1_eps_nev 10 
 -fieldsplit_pc_hpddm_levels_1_st_share_sub_ksp 

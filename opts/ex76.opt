@@ -3,4 +3,4 @@
 -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO 
 -pc_hpddm_harmonic_overlap 1 
 -pc_hpddm_levels_1_eps_nev 30 
--mat_type aijcusparse
+-mat_type aij

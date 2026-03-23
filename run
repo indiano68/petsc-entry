@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+on_error() {
+    echo "Error on line $1" >&2
+    exit 1
+}
+
+cleanup() {
+    [[ -n "${temp_output:-}" && -e "${temp_output:-}" ]] && rm -f -- "$temp_output"
+}
+
+trap 'on_error $LINENO' ERR
+trap cleanup EXIT
+
+if [[ -z "${PETSC_DIR:-}" || -z "${PETSC_ARCH:-}" ]]; then
+    echo -e "\033[1;33mERROR\033[0m: Petsc env vars unset!" >&2
+    exit 2
+fi
+
+use_debugger=false
+for arg in "$@"; do
+    case "$arg" in
+        -d) use_debugger=true ;;
+    esac
+done
+
+export PATH="$PATH:$PETSC_DIR/$PETSC_ARCH/lib"
+executable_root="bin/$PETSC_ARCH"
+
+executable_name="${executable:-ex76}"
+nsize_in="${nsize:-4}"
+mpiexec="${PETSCMPIEXEC:-$PETSC_DIR/$PETSC_ARCH/bin/mpiexec}"
+
+debugger_args=()
+if [[ "$use_debugger" == true ]]; then
+    debugger_args+=("-stop_for_debugger")
+fi
+
+cmd=(
+    "$mpiexec"
+    -n "$nsize_in"
+    "$executable_root/$executable_name"
+    -options_file "opts/$executable_name.opt"
+    ${debugger_args+"${debugger_args[@]}"}
+)
+
+find_debugger() {
+    if command -v lldb >/dev/null 2>&1; then
+        printf '%s\n' "lldb"
+    elif command -v gdb >/dev/null 2>&1; then
+        printf '%s\n' "gdb"
+    else
+        return 1
+    fi
+}
+
+wait_for_pid_in_output() {
+    local file=$1
+    local timeout_seconds=${2:-10}
+    local elapsed=0
+    local pid=""
+
+    while (( elapsed < timeout_seconds * 10 )); do
+        if [[ -s "$file" ]]; then
+            pid="$(
+                awk '/\[0\]/ { print $NF; exit }' "$file" 2>/dev/null || true
+            )"
+            if [[ "$pid" =~ ^[0-9]+$ ]]; then
+                printf '%s\n' "$pid"
+                return 0
+            fi
+        fi
+        sleep 0.1
+        ((elapsed+=1))
+    done
+    return 1
+}
+
+attach_debugger() {
+    local debugger=$1
+    local pid=$2
+
+    case "$debugger" in
+        lldb|gdb)
+            "$debugger" -p "$pid"
+            ;;
+        *)
+            echo "Unsupported debugger: $debugger" >&2
+            return 1
+            ;;
+    esac
+}
+
+if [[ "$use_debugger" == true ]]; then
+    debugger_exec="$(find_debugger)" || {
+        echo "No supported debugger found!" >&2
+        exit 1
+    }
+
+    temp_output="$(mktemp -t ex76-debug.XXXXXX)"
+    echo "Launching under debugger mode..."
+    echo "Output is being captured in: $temp_output"
+
+    "${cmd[@]}" >"$temp_output" 2>&1 &
+    launcher_pid=$!
+
+    pid="$(wait_for_pid_in_output "$temp_output" 15)" || {
+        echo "Could not find process to attach to!" >&2
+        echo "--- Captured output ---" >&2
+        cat "$temp_output" >&2 || true
+        wait "$launcher_pid" || true
+        exit 1
+    }
+
+    if ps -p "$pid" >/dev/null 2>&1; then
+        echo "Attaching $debugger_exec to PID $pid"
+        attach_debugger "$debugger_exec" "$pid"
+        cat "$temp_output"
+    else
+        echo "Could not find process to attach to!" >&2
+        echo "--- Captured output ---" >&2
+        cat "$temp_output" >&2 || true
+        exit 1
+    fi
+else
+    exec "${cmd[@]}"
+fi
