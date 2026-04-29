@@ -1,3 +1,5 @@
+#include "petscpc.h"
+#include "petscsys.h"
 #include <petscksp.h>
 #include <petsc/private/petscimpl.h>
 
@@ -152,6 +154,12 @@ int main(int argc, char **args)
   PetscCall(MatCreateVecs(A, NULL, &b));
   PetscCall(VecSet(b, 1.0));
   PetscCall(PetscOptionsGetBool(NULL, NULL, "-transpose", &transpose, NULL));
+  if(rank==3)
+  {
+    Mat deflation;
+    MatCreateDense(PETSC_COMM_SELF,0,0,0,0,NULL,&deflation);
+    PCHPDDMSetDeflationMat(pc, is,deflation);
+  }
   if (!transpose) PetscCall(KSPSolve(ksp, b, b));
   else {
     PetscCall(KSPSolveTranspose(ksp, b, b));
@@ -335,13 +343,13 @@ int main(int argc, char **args)
    test:
       requires: hpddm slepc datafilespath double !complex !defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES) defined(PETSC_USE_SHARED_LIBRARIES)
       nsize: 4
-      args: -ksp_rtol 1e-3 -ksp_converged_reason -pc_type {{bjacobi hpddm}shared output} -pc_hpddm_coarse_sub_pc_type lu -sub_pc_type lu -options_left no -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
+      args: -mat_type aijcusparse -ksp_rtol 1e-3 -ksp_converged_reason -pc_type {{bjacobi hpddm}shared output} -pc_hpddm_coarse_sub_pc_type lu -sub_pc_type lu -options_left no -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
 
    testset:
       requires: hpddm slepc datafilespath double !complex !defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES) defined(PETSC_USE_SHARED_LIBRARIES)
       suffix: define_subdomains
       nsize: 4
-      args: -ksp_rtol 1e-3 -ksp_converged_reason -pc_hpddm_define_subdomains -options_left no -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
+      args: -mat_type aijcusparse -ksp_rtol 1e-3 -ksp_converged_reason -pc_hpddm_define_subdomains -options_left no -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
       test:
         args: -pc_type {{asm hpddm}shared output} -pc_hpddm_coarse_sub_pc_type lu -sub_pc_type lu -viewer
       test:
@@ -350,15 +358,15 @@ int main(int argc, char **args)
    testset:
       requires: hpddm slepc datafilespath double !complex !defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES) defined(PETSC_USE_SHARED_LIBRARIES)
       nsize: 4
-      args: -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_coarse_pc_type redundant -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
+      args: -mat_type aijcusparse -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_coarse_pc_type redundant -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
       test:
         suffix: geneo
-        args: -pc_hpddm_coarse_p {{1 2}shared output} -pc_hpddm_levels_1_st_pc_type cholesky -pc_hpddm_levels_1_eps_nev {{5 15}separate output} -mat_type {{aij baij sbaij}shared output}
+        args: -pc_hpddm_coarse_p {{1 2}shared output} -pc_hpddm_levels_1_st_pc_type cholesky -pc_hpddm_levels_1_eps_nev {{5 15}separate output}
       test:
         suffix: geneo_block_splitting
         output_file: output/ex76_geneo_pc_hpddm_levels_1_eps_nev-15.out
         filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1[6-9]/Linear solve converged due to CONVERGED_RTOL iterations 11/g"
-        args: -pc_hpddm_coarse_p 2 -pc_hpddm_levels_1_eps_nev 15 -pc_hpddm_block_splitting -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_eps_gen_non_hermitian -mat_type {{aij baij}shared output} -successive_solves
+        args: -pc_hpddm_coarse_p 2 -pc_hpddm_levels_1_eps_nev 15 -pc_hpddm_block_splitting -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_eps_gen_non_hermitian -successive_solves
       test:
         suffix: geneo_share
         output_file: output/ex76_geneo_pc_hpddm_levels_1_eps_nev-5.out
@@ -367,23 +375,17 @@ int main(int argc, char **args)
         suffix: harmonic_overlap_1_define_false
         output_file: output/ex76_geneo_share.out
         filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1[0-3]/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_harmonic_overlap 1 -pc_hpddm_levels_1_eps_nev 30 -pc_hpddm_levels_1_eps_threshold_relative 1e+1 -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_eps_pc_type lu -pc_hpddm_define_subdomains false -pc_hpddm_levels_1_pc_type asm -pc_hpddm_levels_1_pc_asm_overlap 2 -mat_type baij
+        args: -pc_hpddm_harmonic_overlap 1 -pc_hpddm_levels_1_eps_nev 30 -pc_hpddm_levels_1_eps_threshold_relative 1e+1 -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_eps_pc_type lu -pc_hpddm_define_subdomains false -pc_hpddm_levels_1_pc_type asm -pc_hpddm_levels_1_pc_asm_overlap 2
       test:
         suffix: harmonic_overlap_1
         output_file: output/ex76_geneo_share.out
         filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1[0-3]/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_harmonic_overlap 1 -pc_hpddm_levels_1_eps_nev 30 -pc_hpddm_levels_1_eps_threshold_relative 1e+1 -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_eps_pc_type lu -mat_type baij
-      test:
-        suffix: harmonic_overlap_1_cuda
-        requires: cuda
-        output_file: output/ex76_geneo_share.out
-        filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1[0-3]/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_harmonic_overlap 1 -pc_hpddm_levels_1_eps_nev 30 -pc_hpddm_levels_1_eps_threshold_relative 1e+1 -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_eps_pc_type lu -mat_type aijcusparse
+        args: -pc_hpddm_harmonic_overlap 1 -pc_hpddm_levels_1_eps_nev 30 -pc_hpddm_levels_1_eps_threshold_relative 1e+1 -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_eps_pc_type lu
       test:
         suffix: harmonic_overlap_1_share_petsc
         output_file: output/ex76_geneo_share.out
         filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1[0-3]/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_harmonic_overlap 1 -pc_hpddm_levels_1_eps_nev 30 -pc_hpddm_levels_1_eps_threshold_relative 1e+1 -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_levels_1_sub_pc_factor_mat_solver_type petsc -pc_hpddm_levels_1_eps_pc_type lu -mat_type baij
+        args: -pc_hpddm_harmonic_overlap 1 -pc_hpddm_levels_1_eps_nev 30 -pc_hpddm_levels_1_eps_threshold_relative 1e+1 -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_levels_1_sub_pc_factor_mat_solver_type petsc -pc_hpddm_levels_1_eps_pc_type lu
       test:
         requires: mumps
         suffix: harmonic_overlap_1_share_mumps
@@ -396,13 +398,6 @@ int main(int argc, char **args)
         output_file: output/ex76_geneo_share.out
         filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1[0-3]/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
         args: -pc_hpddm_harmonic_overlap 1 -pc_hpddm_levels_1_eps_nev 30 -pc_hpddm_levels_1_eps_threshold_relative 1e+1 -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_levels_1_eps_mat_type baij
-      test:
-        requires: mumps cuda
-        TODO: broken #eps_mat_type baij incompatible with cuda operator.
-        suffix: harmonic_overlap_1_share_mumps_not_set_explicitly_cuda
-        output_file: output/ex76_geneo_share.out
-        filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1[0-3]/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_harmonic_overlap 1 -pc_hpddm_levels_1_eps_nev 30 -pc_hpddm_levels_1_eps_threshold_relative 1e+1 -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_levels_1_eps_mat_type baij -mat_type aijcusparse
       test:
         requires: mkl_pardiso
         suffix: harmonic_overlap_1_share_mkl_pardiso
@@ -419,45 +414,33 @@ int main(int argc, char **args)
         suffix: harmonic_overlap_2_threshold_relative
         output_file: output/ex76_geneo_share.out
         filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 9/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_harmonic_overlap 2 -pc_hpddm_levels_1_svd_nsv 15 -pc_hpddm_levels_1_svd_threshold_relative 1e-1 -pc_hpddm_levels_1_st_share_sub_ksp -mat_type sbaij
+        args: -pc_hpddm_harmonic_overlap 2 -pc_hpddm_levels_1_svd_nsv 15 -pc_hpddm_levels_1_svd_threshold_relative 1e-1 -pc_hpddm_levels_1_st_share_sub_ksp
       test:
         suffix: harmonic_overlap_2
         output_file: output/ex76_geneo_share.out
         filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 9/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_harmonic_overlap 2 -pc_hpddm_levels_1_svd_nsv 12 -pc_hpddm_levels_1_svd_type {{trlanczos randomized}shared output} -pc_hpddm_levels_1_st_share_sub_ksp -mat_type sbaij
-      test:
-        suffix: harmonic_overlap_2_cuda
-        requires: cuda
-        output_file: output/ex76_geneo_share.out
-        filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 9/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_harmonic_overlap 2 -pc_hpddm_levels_1_svd_nsv 12 -pc_hpddm_levels_1_svd_type randomized -pc_hpddm_levels_1_st_share_sub_ksp -mat_type aijcusparse
+        args: -pc_hpddm_harmonic_overlap 2 -pc_hpddm_levels_1_svd_nsv 12 -pc_hpddm_levels_1_svd_type {{trlanczos randomized}shared output} -pc_hpddm_levels_1_st_share_sub_ksp
 
    testset:
       requires: hpddm slepc datafilespath double !complex !defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES) defined(PETSC_USE_SHARED_LIBRARIES)
       nsize: 4
-      args: -ksp_converged_reason -ksp_max_it 150 -pc_type hpddm -pc_hpddm_levels_1_eps_nev 5 -pc_hpddm_coarse_p 1 -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -pc_hpddm_define_subdomains
+      args: -mat_type aijcusparse -ksp_converged_reason -ksp_max_it 150 -pc_type hpddm -pc_hpddm_levels_1_eps_nev 5 -pc_hpddm_coarse_p 1 -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -pc_hpddm_define_subdomains
       test:
         suffix: geneo_share_cholesky
         output_file: output/ex76_geneo_share.out
         # extra -pc_hpddm_levels_1_eps_gen_non_hermitian needed to avoid failures with PETSc Cholesky
-        args: -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_st_pc_type cholesky -mat_type {{aij sbaij}shared output} -pc_hpddm_levels_1_eps_gen_non_hermitian -pc_hpddm_has_neumann -pc_hpddm_levels_1_st_share_sub_ksp {{false true}shared output} -successive_solves
+        args: -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_st_pc_type cholesky -pc_hpddm_levels_1_eps_gen_non_hermitian -pc_hpddm_has_neumann -pc_hpddm_levels_1_st_share_sub_ksp {{false true}shared output} -successive_solves
       test:
         suffix: geneo_share_cholesky_matstructure
         output_file: output/ex76_geneo_share.out
         # extra -pc_hpddm_levels_1_eps_gen_non_hermitian needed to avoid failures with PETSc Cholesky
         filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 14/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_levels_1_sub_pc_type cholesky -mat_type {{baij sbaij}shared output} -pc_hpddm_levels_1_eps_gen_non_hermitian -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_levels_1_st_matstructure same -set_rhs {{false true} shared output}
+        args: -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_gen_non_hermitian -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_levels_1_st_matstructure same -set_rhs {{false true} shared output}
       test:
         suffix: geneo_transpose
         output_file: output/ex76_geneo_share.out
         filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1[234]/Linear solve converged due to CONVERGED_RTOL iterations 15/g" -e "s/Linear solve converged due to CONVERGED_RTOL iterations 26/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
         args: -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_st_pc_type cholesky -pc_hpddm_levels_1_eps_gen_non_hermitian -pc_hpddm_has_neumann -pc_hpddm_levels_1_st_share_sub_ksp -successive_solves -transpose -pc_hpddm_coarse_correction {{additive deflated balanced}shared output}
-      test:
-        suffix: geneo_transpose_cuda
-        TODO: broken #Converges at different rate than original test, possible issue in EPS when using -eps_gen_non_hermitian
-        output_file: output/ex76_geneo_share.out
-        filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1[234]/Linear solve converged due to CONVERGED_RTOL iterations 15/g" -e "s/Linear solve converged due to CONVERGED_RTOL iterations 26/Linear solve converged due to CONVERGED_RTOL iterations 15/g"
-        args: -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_st_pc_type cholesky -pc_hpddm_levels_1_eps_gen_non_hermitian -pc_hpddm_has_neumann -pc_hpddm_levels_1_st_share_sub_ksp -successive_solves -transpose -pc_hpddm_coarse_correction balanced -mat_type aijcusparse
       test:
         suffix: geneo_explicittranspose
         output_file: output/ex76_geneo_share.out
@@ -468,39 +451,30 @@ int main(int argc, char **args)
         suffix: geneo_share_lu
         output_file: output/ex76_geneo_share.out
         # extra -pc_factor_mat_solver_type mumps needed to avoid failures with PETSc LU
-        args: -pc_hpddm_levels_1_sub_pc_type lu -pc_hpddm_levels_1_st_pc_type lu -mat_type baij -pc_hpddm_levels_1_st_pc_factor_mat_solver_type mumps -pc_hpddm_levels_1_sub_pc_factor_mat_solver_type mumps -pc_hpddm_has_neumann -pc_hpddm_levels_1_st_share_sub_ksp {{false true}shared output} -pc_hpddm_coarse_pc_factor_mat_solver_type mumps -pc_hpddm_coarse_mat_mumps_icntl_15 1
+        args: -pc_hpddm_levels_1_sub_pc_type lu -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_st_pc_factor_mat_solver_type mumps -pc_hpddm_levels_1_sub_pc_factor_mat_solver_type mumps -pc_hpddm_has_neumann -pc_hpddm_levels_1_st_share_sub_ksp {{false true}shared output} -pc_hpddm_coarse_pc_factor_mat_solver_type mumps -pc_hpddm_coarse_mat_mumps_icntl_15 1
       test:
         requires: mumps
         suffix: geneo_share_lu_matstructure
         output_file: output/ex76_geneo_share.out
         # extra -pc_factor_mat_solver_type mumps needed to avoid failures with PETSc LU
-        args: -pc_hpddm_levels_1_sub_pc_type lu -mat_type aij -pc_hpddm_levels_1_sub_pc_factor_mat_solver_type mumps -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_levels_1_st_matstructure {{same different}shared output} -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_st_pc_factor_mat_solver_type mumps -successive_solves -pc_hpddm_levels_1_eps_target 1e-5
+        args: -pc_hpddm_levels_1_sub_pc_type lu -pc_hpddm_levels_1_sub_pc_factor_mat_solver_type mumps -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_levels_1_st_matstructure {{same different}shared output} -pc_hpddm_levels_1_st_pc_type lu -pc_hpddm_levels_1_st_pc_factor_mat_solver_type mumps -successive_solves -pc_hpddm_levels_1_eps_target 1e-5
       test:
         suffix: geneo_share_not_asm
         output_file: output/ex76_geneo_pc_hpddm_levels_1_eps_nev-5.out
         # extra -pc_hpddm_levels_1_eps_gen_non_hermitian needed to avoid failures with PETSc Cholesky
         args: -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_st_pc_type cholesky -pc_hpddm_levels_1_eps_gen_non_hermitian -pc_hpddm_has_neumann -pc_hpddm_levels_1_st_share_sub_ksp true -pc_hpddm_levels_1_pc_type gasm -successive_solves
-      test:
-        suffix: geneo_share_not_asm_cuda
-        output_file: output/ex76_geneo_pc_hpddm_levels_1_eps_nev-5.out
-        TODO: broken # GASM does not tollerate aijcusparse operators.
-        # extra -pc_hpddm_levels_1_eps_gen_non_hermitian needed to avoid failures with PETSc Cholesky
-        args: -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_st_pc_type cholesky -pc_hpddm_levels_1_eps_gen_non_hermitian -pc_hpddm_has_neumann -pc_hpddm_levels_1_st_share_sub_ksp true -pc_hpddm_levels_1_pc_type gasm -successive_solves -mat_type aijcusparse
 
    test:
       requires: hpddm slepc datafilespath double !complex !defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES) defined(PETSC_USE_SHARED_LIBRARIES)
       suffix: fgmres_geneo_20_p_2
       nsize: 4
-      args: -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type lu -pc_hpddm_levels_1_eps_nev 20 -pc_hpddm_coarse_p 2 -pc_hpddm_coarse_pc_type redundant -ksp_type fgmres -pc_hpddm_coarse_mat_type {{baij sbaij}shared output} -pc_hpddm_log_separate {{false true}shared output} -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
+      args: -mat_type aijcusparse -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type lu -pc_hpddm_levels_1_eps_nev 20 -pc_hpddm_coarse_p 2 -pc_hpddm_coarse_pc_type redundant -ksp_type fgmres -pc_hpddm_coarse_mat_type {{baij sbaij}shared output} -pc_hpddm_log_separate {{false true}shared output} -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
 
    testset:
       requires: hpddm slepc datafilespath double !complex !defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES) defined(PETSC_USE_SHARED_LIBRARIES)
       output_file: output/ex76_fgmres_geneo_20_p_2.out
       nsize: 4
-      args: -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_nev 20 -pc_hpddm_levels_2_p 2 -pc_hpddm_levels_2_mat_type {{baij sbaij}shared output} -pc_hpddm_levels_2_eps_nev {{5 20}shared output} -pc_hpddm_levels_2_sub_pc_type cholesky -pc_hpddm_levels_2_ksp_type gmres -ksp_type fgmres -pc_hpddm_coarse_mat_type {{baij sbaij}shared output} -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
-      test:
-        suffix: fgmres_geneo_20_p_2_geneo
-        args: -mat_type {{aij sbaij}shared output}
+      args: -mat_type aijcusparse -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_nev 20 -pc_hpddm_levels_2_p 2 -pc_hpddm_levels_2_mat_type {{baij sbaij}shared output} -pc_hpddm_levels_2_eps_nev {{5 20}shared output} -pc_hpddm_levels_2_sub_pc_type cholesky -pc_hpddm_levels_2_ksp_type gmres -ksp_type fgmres -pc_hpddm_coarse_mat_type {{baij sbaij}shared output} -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
       test:
         suffix: fgmres_geneo_20_p_2_geneo_algebraic
         args: -pc_hpddm_levels_2_st_pc_type mat
@@ -511,20 +485,20 @@ int main(int argc, char **args)
       # for -pc_hpddm_coarse_correction additive
       filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 37/Linear solve converged due to CONVERGED_RTOL iterations 25/g"
       nsize: 4
-      args: -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_nev 20 -ksp_type hpddm -ksp_hpddm_variant flexible -pc_hpddm_coarse_mat_type baij -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -rhs 4
+      args: -mat_type aijcusparse -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_nev 20 -ksp_type hpddm -ksp_hpddm_variant flexible -pc_hpddm_coarse_mat_type baij -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -rhs 4
       test:
         suffix: fgmres_geneo_20_p_2_geneo_rhs
-        args: -pc_hpddm_levels_2_p 2 -pc_hpddm_levels_2_mat_type baij -pc_hpddm_levels_2_eps_nev 5 -pc_hpddm_levels_2_sub_pc_type cholesky -pc_hpddm_levels_2_ksp_max_it 10 -pc_hpddm_levels_2_ksp_type hpddm -pc_hpddm_levels_2_ksp_hpddm_type gmres -mat_type aij -pc_hpddm_coarse_correction {{additive deflated balanced}shared output}
+        args: -pc_hpddm_levels_2_p 2 -pc_hpddm_levels_2_mat_type baij -pc_hpddm_levels_2_eps_nev 5 -pc_hpddm_levels_2_sub_pc_type cholesky -pc_hpddm_levels_2_ksp_max_it 10 -pc_hpddm_levels_2_ksp_type hpddm -pc_hpddm_levels_2_ksp_hpddm_type gmres -pc_hpddm_coarse_correction {{additive deflated balanced}shared output}
       test:
         requires: cuda
         suffix: fgmres_geneo_20_rhs_cuda
-        args: -mat_type aijcusparse -pc_hpddm_coarse_correction {{deflated balanced}shared output}
+        args: -pc_hpddm_coarse_correction {{deflated balanced}shared output}
 
    testset:
       requires: hpddm slepc datafilespath double !complex !defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES) defined(PETSC_USE_SHARED_LIBRARIES) mumps defined(PETSC_HAVE_OPENMP_SUPPORT)
       filter: grep -E -e "Linear solve" -e "      executing" | sed -e "s/MPI =      1/MPI =      2/g" -e "s/OMP =      1/OMP =      2/g"
       nsize: 4
-      args: -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_nev 15 -pc_hpddm_levels_1_st_pc_type cholesky -pc_hpddm_coarse_p {{1 2}shared output} -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -pc_hpddm_coarse_pc_factor_mat_solver_type mumps -pc_hpddm_coarse_mat_mumps_icntl_4 2 -pc_hpddm_coarse_mat_mumps_use_omp_threads {{1 2}shared output}
+      args: -mat_type aijcusparse -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_nev 15 -pc_hpddm_levels_1_st_pc_type cholesky -pc_hpddm_coarse_p {{1 2}shared output} -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -pc_hpddm_coarse_pc_factor_mat_solver_type mumps -pc_hpddm_coarse_mat_mumps_icntl_4 2 -pc_hpddm_coarse_mat_mumps_use_omp_threads {{1 2}shared output}
       test:
         suffix: geneo_mumps_use_omp_threads_1
         output_file: output/ex76_geneo_mumps_use_omp_threads.out
@@ -537,7 +511,7 @@ int main(int argc, char **args)
    testset: # converge really poorly because of a tiny -pc_hpddm_levels_1_eps_threshold_absolute, but needed for proper code coverage where some subdomains don't call EPSSolve()
       requires: hpddm slepc datafilespath double !complex !defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES) defined(PETSC_USE_SHARED_LIBRARIES)
       nsize: 4
-      args: -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_threshold_absolute 0.005 -pc_hpddm_levels_1_eps_use_inertia -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_define_subdomains -pc_hpddm_has_neumann -ksp_rtol 0.9
+      args: -mat_type aijcusparse -ksp_converged_reason -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_threshold_absolute 0.005 -pc_hpddm_levels_1_eps_use_inertia -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -pc_hpddm_levels_1_st_share_sub_ksp -pc_hpddm_define_subdomains -pc_hpddm_has_neumann -ksp_rtol 0.9
       filter: sed -e "s/Linear solve converged due to CONVERGED_RTOL iterations 1/Linear solve converged due to CONVERGED_RTOL iterations 141/g"
       test:
         suffix: inertia_petsc
@@ -548,17 +522,12 @@ int main(int argc, char **args)
         output_file: output/ex76_1.out
         requires: mumps
 
-   testset:
+   test:
       requires: hpddm slepc datafilespath double !complex !defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES) defined(PETSC_USE_SHARED_LIBRARIES)
+      suffix: reuse_symbolic
       output_file: output/empty.out
       nsize: 4
-      args: -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_nev 20 -rhs 4 -ksp_max_it 20 -ksp_type hpddm -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -pc_hpddm_define_subdomains -ksp_error_if_not_converged
-      test:
-        suffix: reuse_symbolic
-        args: -pc_hpddm_coarse_correction {{additive deflated balanced}shared output} -ksp_pc_side {{left right}shared output} -transpose {{true false} shared output}
-      test:
-        requires: cuda
-        suffix: reuse_symbolic_cuda
-        args: -pc_hpddm_coarse_correction deflated -ksp_pc_side right -transpose true -mat_type aijcusparse
+      args: -mat_type aijcusparse -pc_type hpddm -pc_hpddm_levels_1_sub_pc_type cholesky -pc_hpddm_levels_1_eps_nev 20 -rhs 4 -pc_hpddm_coarse_correction {{additive deflated balanced}shared output} -ksp_pc_side {{left right}shared output} -ksp_max_it 20 -ksp_type hpddm -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO -pc_hpddm_define_subdomains -ksp_error_if_not_converged -transpose {{true false} shared output}
 
 TEST*/
+

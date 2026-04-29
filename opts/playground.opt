@@ -1,0 +1,5 @@
+-lda 0
+-ex19_mat_view 
+-use_memtype true
+-vec_type cuda
+

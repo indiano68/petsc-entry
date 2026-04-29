@@ -1,0 +1,8 @@
+-m 12 
+-n 17 
+-test_trans 
+-nr 2 
+-nc 3 
+-diffmap 
+-permmap
+-mat_is_localmat_type aijcusparse

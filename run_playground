@@ -22,8 +22,7 @@ PATH="$PATH":"$PETSC_DIR/$PETSC_ARCH/lib"
 DATAFILESPATH=${DATAFILESPATH:-"$PETSC_DIR/../datafiles"}
 executable_root="bin/$PETSC_ARCH"
 
-# args="-options_file opts/playground.opt"
-args=""
+args="-options_file opts/playground.opt"
 load_dir=""
 mpiexec=${PETSCMPIEXEC:-"$PETSC_DIR/$PETSC_ARCH/bin/mpiexec"}
 
@@ -31,7 +30,7 @@ mpiexec=${PETSCMPIEXEC:-"$PETSC_DIR/$PETSC_ARCH/bin/mpiexec"}
 executable_name='playground'
 debugger_args=''
 log_args=''
-nsize_in=${nsize:-4}
+nsize_in=${nsize:-1}
 
 if [ "$use_log" == true ]; then
   log_args="-log_view"

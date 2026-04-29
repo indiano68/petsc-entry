@@ -1,0 +1,5 @@
+src/ksp/ksp/tutorials/ex76.c
+src/ksp/ksp/tests/ex87.c
+src/mat/tutorials/ex19.c #added
+src/tao/unconstrained/impls/lmvm/tests/ex1.c
+src/tao/unconstrained/tutorials/rosenbrock4.h

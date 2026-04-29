@@ -1,6 +1,11 @@
--ksp_converged_reason 
+-mat_type aij
 -pc_type hpddm 
+-pc_hpddm_levels_1_eps_nev 10
+# -rhs 4
+-pc_hpddm_coarse_correction additive
 -load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO 
--pc_hpddm_harmonic_overlap 1 
--pc_hpddm_levels_1_eps_nev 30 
--mat_type aijcusparse
+-pc_hpddm_define_subdomains 
+-ksp_monitor
+-log_view
+
+
