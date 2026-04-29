@@ -1,6 +1,11 @@
+-ksp_rtol 1e-3 
 -ksp_converged_reason 
+-pc_hpddm_define_subdomains 
+-options_left no 
+-load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO
 -pc_type hpddm 
--load_dir ${DATAFILESPATH}/matrices/hpddm/GENEO 
--pc_hpddm_harmonic_overlap 1 
--pc_hpddm_levels_1_eps_nev 30 
--mat_type aij
+-pc_hpddm_levels_1_st_pc_type cholesky 
+-pc_hpddm_levels_1_eps_nev 5 
+-pc_hpddm_coarse_sub_pc_type lu 
+-pc_hpddm_levels_1_sub_pc_type lu 
+-pc_hpddm_coarse_correction none

@@ -1,32 +1,16 @@
-#include "mpi.h"
-#include "mpi_proto.h"
-#include "petscconf.h"
 #include "petscis.h"
-#include "petscistypes.h"
-#include "petscksp.h"
-#include "petsclog.h"
-#include "petscmat.h"
-#include "petscpc.h"
-#include "petscsys.h"
-#include "petscsystypes.h"
-#include "petscvec.h"
-#include "petscviewer.h"
 #include <petsc.h>
 #include <stdlib.h>
 
 int main(int argc, char **argv) {
   Mat A, X, aux;
-  Vec b;
-  KSP ksp;
-  PC pc;
-  IS sizes_is, is, local_is;
+  IS sizes_is, is;
   const PetscInt *indexes;
   PetscLayout map;
   Mat *sub;
 
   PetscViewer viewer;
-  char datadir[PETSC_MAX_PATH_LEN] = "/Users/erikfabrizzi/Workspace/LIP6-SWE/"
-                                     "repos/datafiles/matrices/hpddm/GENEO",
+  char datadir[PETSC_MAX_PATH_LEN] ,
        filename[PETSC_MAX_PATH_LEN];
 
   PetscSubcomm subcomm_read, subcomm_work;
@@ -36,6 +20,7 @@ int main(int argc, char **argv) {
 
   PetscFunctionBeginUser;
   PetscCall(PetscInitialize(&argc, &argv, NULL, NULL));
+  PetscCall(PetscOptionsGetString(NULL, NULL, "-load_dir", datadir, sizeof(datadir), NULL));
   PetscCallMPI(MPI_Comm_rank(PETSC_COMM_WORLD, &global_rank));
   PetscCallMPI(MPI_Comm_size(PETSC_COMM_WORLD, &global_size));
   PetscCheck(global_size % n_subdomains == 0, PETSC_COMM_WORLD,
@@ -112,52 +97,29 @@ int main(int argc, char **argv) {
   PetscCall(ISLoad(sizes_is, viewer));
   PetscCall(ISSetBlockSize(sizes_is, bs));
   PetscCall(PetscViewerDestroy(&viewer));
-  PetscCall(ISDuplicate(sizes_is, &is));
   PetscCall(ISSetBlockSize(sizes_is, bs));
   PetscCall(ISOnComm(sizes_is, mpisubcomm_work, PETSC_COPY_VALUES, &is));
   PetscCall(ISDestroy(&sizes_is));
   PetscCall(MatDestroy(&X));
+
   /****************************************************************************/
 
-  /********************************** Cre. b **********************************/
-  PetscCall(MatCreateVecs(A, NULL, &b));
-  PetscCall(VecSet(b, 1.0));
-  /****************************************************************************/
 
-  PetscCall(KSPCreate(PETSC_COMM_WORLD, &ksp));
-  PetscCall(KSPSetOperators(ksp, A, A));
-  PetscCall(KSPGetPC(ksp, &pc));
-  PetscCall(PCSetType(pc, PCHPDDM));
-  PetscCall(PCHPDDMSetAuxiliaryMat(pc, is, aux, NULL, NULL));
-  PetscCall(MatDestroy(&aux));
-  PetscCall(KSPSetFromOptions(ksp));
-  PetscCall(ISDestroy(&is));
-  PetscCall(KSPSolve(ksp, b, b));
+  PetscCall(MatCreateSubMatricesMPI(A, 1, &is, &is, MAT_INITIAL_MATRIX, &sub));
+  PetscInt subcom_size = global_size /n_subdomains;
+  PetscInt color = global_rank / subcom_size;
+  snprintf(filename, sizeof(filename),
+           "A_subcom%d_%d.dat", color, global_size);
+  PetscCall(PetscViewerASCIIOpen(mpisubcomm_work, filename, &viewer));
+  PetscCall(PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_COMMON));
+  PetscCall(MatView(sub[0], viewer));
+  PetscCall(PetscViewerDestroy(&viewer));
 
   /********************************** Clean **********************************/
   PetscCall(PetscSubcommDestroy(&subcomm_read));
   PetscCall(PetscSubcommDestroy(&subcomm_work));
-  PetscCall(KSPDestroy(&ksp));
-  PetscCall(VecDestroy(&b));
+  PetscCall(ISDestroy(&is));
   PetscCall(MatDestroy(&A));
   /****************************************************************************/
   PetscCall(PetscFinalize());
 }
-
-/*TEST
-
-   test:
-      suffix: clean
-      output_file: output/empty.out
-      requires: hpddm slepc datafilespath double !complex
-!defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES)
-defined(PETSC_USE_SHARED_LIBRARIES) nsize: 8 args: -ksp_converged_reason
--ksp_atol 1e-8
-
-   test:
-      requires: hpddm slepc datafilespath double !complex
-!defined(PETSC_USE_64BIT_INDICES) defined(PETSC_HAVE_DYNAMIC_LIBRARIES)
-defined(PETSC_USE_SHARED_LIBRARIES) output_file: output/empty.out nsize: 8 args:
--ksp_converged_reason -pc_hpddm_levels_1_eps_nev 2 -ksp_atol 1e-8
-
-TEST*/
