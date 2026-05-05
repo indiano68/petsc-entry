@@ -13,6 +13,8 @@ from typing import Iterable
 
 RANK_PREFIX_RE = re.compile(r"^\[(\d+)\]\s+")
 MPI_PROCESS_RE = re.compile(r"\bMPI process(?:es)?\b")
+IS_SIZE_RE = re.compile(r"^Number of indices in(?: \([^)]+\))? set (\d+)$")
+L2G_RANGE_RE = re.compile(r"^(\d+):(\d+)\s+(\d+):(\d+)$")
 
 
 class ValidationError(Exception):
@@ -34,6 +36,12 @@ def split_filename(path: Path) -> tuple[str, str, str]:
     return parts[0], parts[1], parts[2]
 
 
+@dataclass(frozen=True)
+class LocalToGlobalMapping:
+    process_count: int
+    normalized: list[int]
+
+
 def parse_petsc_ascii(path: Path) -> ParsedFile:
     with path.open("r", encoding="utf-8") as handle:
         lines = [line.rstrip("\n") for line in handle]
@@ -46,6 +54,10 @@ def parse_petsc_ascii(path: Path) -> ParsedFile:
         return ParsedFile("mat", parse_mat(lines, path))
     if header.startswith("IS Object:"):
         return ParsedFile("is", parse_is(lines, path))
+    if header.startswith("Vec Object:"):
+        return ParsedFile("vec", parse_vec(lines, path))
+    if header.startswith("ISLocalToGlobalMapping Object:"):
+        return ParsedFile("l2g", parse_l2g(lines, path))
 
     raise ValidationError(f"{path.name}: unsupported PETSc ASCII object header {header!r}")
 
@@ -96,10 +108,10 @@ def parse_is(lines: list[str], path: Path) -> list[int]:
         stripped = RANK_PREFIX_RE.sub("", stripped)
         if stripped.startswith("type:"):
             continue
-        if stripped.startswith("Number of indices in set"):
-            tail = stripped.split()[-1]
+        size_match = IS_SIZE_RE.match(stripped)
+        if size_match:
             try:
-                declared_total += int(tail)
+                declared_total += int(size_match.group(1))
             except ValueError as exc:
                 raise ValidationError(
                     f"{path.name}: invalid IS size declaration {raw_line!r}"
@@ -127,11 +139,113 @@ def parse_is(lines: list[str], path: Path) -> list[int]:
     return values
 
 
+def parse_vec(lines: list[str], path: Path) -> list[float]:
+    values: list[float] = []
+
+    for raw_line in lines[1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("type:"):
+            continue
+        if stripped.startswith("Process ["):
+            continue
+        if MPI_PROCESS_RE.search(stripped):
+            continue
+        if stripped.startswith("["):
+            stripped = RANK_PREFIX_RE.sub("", stripped)
+        try:
+            values.append(float(stripped))
+        except ValueError as exc:
+            raise ValidationError(f"{path.name}: invalid vector entry {raw_line!r}") from exc
+
+    return values
+
+
+def parse_l2g(lines: list[str], path: Path) -> LocalToGlobalMapping:
+    header = lines[0].strip()
+    match = re.search(r":\s+(\d+)\s+MPI process(?:es)?$", header)
+    if match is None:
+        raise ValidationError(f"{path.name}: invalid ISLocalToGlobal header {header!r}")
+
+    process_count = int(match.group(1))
+    by_rank: dict[int, list[tuple[int, int, int, int]]] = {}
+
+    for raw_line in lines[1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("type"):
+            continue
+        if MPI_PROCESS_RE.search(stripped):
+            continue
+        rank_match = RANK_PREFIX_RE.match(stripped)
+        if rank_match is None:
+            raise ValidationError(f"{path.name}: missing rank prefix in {raw_line!r}")
+        rank = int(rank_match.group(1))
+        stripped = RANK_PREFIX_RE.sub("", stripped)
+
+        range_match = L2G_RANGE_RE.match(stripped)
+        if range_match is None:
+            raise ValidationError(f"{path.name}: invalid ISLocalToGlobal entry {raw_line!r}")
+
+        local_start, local_end, global_start, global_end = (
+            int(range_match.group(1)),
+            int(range_match.group(2)),
+            int(range_match.group(3)),
+            int(range_match.group(4)),
+        )
+        local_count = local_end - local_start
+        global_count = global_end - global_start
+        if local_count < 0 or global_count < 0:
+            raise ValidationError(f"{path.name}: descending ISLocalToGlobal range {raw_line!r}")
+        if local_count != global_count:
+            raise ValidationError(
+                f"{path.name}: inconsistent ISLocalToGlobal range lengths in {raw_line!r}"
+            )
+
+        by_rank.setdefault(rank, []).append((local_start, local_end, global_start, global_end))
+
+    if not by_rank:
+        raise ValidationError(f"{path.name}: no ISLocalToGlobal entries found")
+
+    normalized: list[int] = []
+    for rank in range(process_count):
+        entries = by_rank.get(rank, [])
+        if not entries:
+            continue
+
+        rank_values: list[int | None] = []
+        expected_local_start = 0
+        for local_start, local_end, global_start, global_end in entries:
+            if local_start != expected_local_start:
+                raise ValidationError(
+                    f"{path.name}: non-contiguous local range on rank {rank}: "
+                    f"expected {expected_local_start}, got {local_start}"
+                )
+
+            local_count = local_end - local_start
+            global_count = global_end - global_start
+            if local_count != global_count:
+                raise ValidationError(
+                    f"{path.name}: inconsistent ISLocalToGlobal range lengths on rank {rank}"
+                )
+
+            rank_values.extend(range(global_start, global_end))
+            expected_local_start = local_end
+
+        normalized.extend(rank_values)
+
+    return LocalToGlobalMapping(process_count=process_count, normalized=normalized)
+
+
 def compare_parsed(
     left: ParsedFile,
     right: ParsedFile,
     rel_tol: float,
     abs_tol: float,
+    left_classifier_1: str | None = None,
+    right_classifier_1: str | None = None,
 ) -> str | None:
     if left.kind != right.kind:
         return f"type mismatch: {left.kind} != {right.kind}"
@@ -139,6 +253,10 @@ def compare_parsed(
         return compare_mats(left.payload, right.payload, rel_tol, abs_tol)
     if left.kind == "is":
         return compare_index_sets(left.payload, right.payload)
+    if left.kind == "vec":
+        return compare_vecs(left.payload, right.payload, rel_tol, abs_tol)
+    if left.kind == "l2g":
+        return compare_l2g(left.payload, right.payload, left_classifier_1, right_classifier_1)
     return f"unsupported parsed kind {left.kind!r}"
 
 
@@ -174,6 +292,38 @@ def compare_index_sets(left: list[int], right: list[int]) -> str | None:
     return None
 
 
+def compare_vecs(
+    left: list[float],
+    right: list[float],
+    rel_tol: float,
+    abs_tol: float,
+) -> str | None:
+    if len(left) != len(right):
+        return f"vector length mismatch: {len(left)} != {len(right)}"
+    for i, (left_value, right_value) in enumerate(zip(left, right)):
+        if not math.isclose(left_value, right_value, rel_tol=rel_tol, abs_tol=abs_tol):
+            return f"vector value mismatch at {i}: {left_value} != {right_value}"
+    return None
+
+
+def compare_l2g(
+    left: LocalToGlobalMapping,
+    right: LocalToGlobalMapping,
+    left_classifier_1: str | None,
+    right_classifier_1: str | None,
+) -> str | None:
+    _ = (left_classifier_1, right_classifier_1)
+    if len(left.normalized) != len(right.normalized):
+        return f"mapping length mismatch: {len(left.normalized)} != {len(right.normalized)}"
+    for i, (left_value, right_value) in enumerate(zip(left.normalized, right.normalized)):
+        if left_value != right_value:
+            return (
+                f"normalized mapping mismatch at global-local index {i}: "
+                f"{left_value} != {right_value}"
+            )
+    return None
+
+
 def classifier_sort_key(value: str) -> tuple[int, object]:
     try:
         return (0, int(value))
@@ -204,37 +354,60 @@ def validate_directory(directory: Path, rel_tol: float, abs_tol: float) -> int:
         raise ValidationError(f"{directory}: no files to validate")
 
     failures = 0
+    parse_errors = 0
     compared_groups = 0
 
     for (name, classifier_2), group_paths in sorted(groups.items()):
         if len(group_paths) < 2:
             continue
 
+        parsed_group: list[tuple[Path, ParsedFile]] = []
+        for path in group_paths:
+            try:
+                parsed_group.append((path, parse_petsc_ascii(path)))
+            except ValidationError as exc:
+                parse_errors += 1
+                print(f"ERROR {exc}")
+
+        if len(parsed_group) < 2:
+            continue
+
         compared_groups += 1
-        parsed_reference = parse_petsc_ascii(group_paths[0])
+        reference_path, parsed_reference = parsed_group[0]
+        _, reference_classifier_1, _ = split_filename(reference_path)
         group_failed = False
 
-        for candidate_path in group_paths[1:]:
-            parsed_candidate = parse_petsc_ascii(candidate_path)
-            mismatch = compare_parsed(parsed_reference, parsed_candidate, rel_tol, abs_tol)
+        for candidate_path, parsed_candidate in parsed_group[1:]:
+            _, candidate_classifier_1, _ = split_filename(candidate_path)
+            mismatch = compare_parsed(
+                parsed_reference,
+                parsed_candidate,
+                rel_tol,
+                abs_tol,
+                reference_classifier_1,
+                candidate_classifier_1,
+            )
             if mismatch is not None:
                 group_failed = True
                 failures += 1
                 print(
                     f"FAIL {name} classifier_2={classifier_2}: "
-                    f"{group_paths[0].name} vs {candidate_path.name}: {mismatch}"
+                    f"{reference_path.name} vs {candidate_path.name}: {mismatch}"
                 )
 
         if not group_failed:
-            members = ", ".join(path.name for path in group_paths)
+            members = ", ".join(path.name for path, _ in parsed_group)
             print(f"OK   {name} classifier_2={classifier_2}: {members}")
 
     if compared_groups == 0:
         print("No comparable groups found.")
         return 0
 
-    if failures:
-        print(f"\nValidation failed: {failures} mismatched comparison(s).")
+    if failures or parse_errors:
+        print(
+            "\nValidation failed: "
+            f"{failures} mismatched comparison(s), {parse_errors} parse error(s)."
+        )
         return 1
 
     print(f"\nValidation passed: {compared_groups} group(s) matched.")

@@ -1,0 +1,4 @@
+-ksp_converged_reason 
+-pc_type hpddm 
+-pc_hpddm_levels_1_eps_nev 30 
+# -ksp_type preonly

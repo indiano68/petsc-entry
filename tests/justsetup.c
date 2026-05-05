@@ -10,7 +10,7 @@
 #include "petscsys.h"
 #include "petscsystypes.h"
 #include "petscviewer.h"
-#include <HPDDM_debug.hpp>
+// #include <HPDDM_debug.hpp>
 #include <petsc.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -101,9 +101,9 @@ int main(int argc, char **argv) {
   } else
     free((void *)indexes);
 
-  init_debug_viewer(PetscObjectComm((PetscObject)aux), "aux");
-  MatView(aux, debug_viewer);
-  destroy_debug_viewer();
+  // init_debug_viewer(PetscObjectComm((PetscObject)aux), "aux");
+  // MatView(aux, debug_viewer);
+  // destroy_debug_viewer();
 
   /****************************************************************************/
 
@@ -127,9 +127,9 @@ int main(int argc, char **argv) {
   PetscCall(ISDestroy(&sizes_is));
   PetscCall(MatDestroy(&X));
 
-  init_debug_viewer(PetscObjectComm((PetscObject)is), "is");
-  ISView(is, debug_viewer);
-  destroy_debug_viewer();
+  // init_debug_viewer(PetscObjectComm((PetscObject)is), "is");
+  // ISView(is, debug_viewer);
+  // destroy_debug_viewer();
 
   /****************************************************************************/
 
@@ -141,6 +141,7 @@ int main(int argc, char **argv) {
   PetscCall(MatDestroy(&aux));
   PetscCall(KSPSetFromOptions(ksp));
   PetscCall(ISDestroy(&is));
+  PetscCall(PCSetUp(pc));
 
   /********************************** Clean **********************************/
   PetscCall(PetscSubcommDestroy(&subcomm_read));
