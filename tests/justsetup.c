@@ -10,7 +10,6 @@
 #include "petscsys.h"
 #include "petscsystypes.h"
 #include "petscviewer.h"
-// #include <HPDDM_debug.hpp>
 #include <petsc.h>
 #include <stdio.h>
 #include <stdlib.h>

@@ -1,0 +1,7 @@
+-include ../../../petscdir.mk
+
+SLEPC_DIR ?= ${PETSC_DIR}/${PETSC_ARCH}
+
+MANSEC = EPS
+
+include ${SLEPC_DIR}/lib/slepc/conf/slepc_common
