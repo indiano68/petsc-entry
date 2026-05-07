@@ -15,6 +15,7 @@ RANK_PREFIX_RE = re.compile(r"^\[(\d+)\]\s+")
 MPI_PROCESS_RE = re.compile(r"\bMPI process(?:es)?\b")
 IS_SIZE_RE = re.compile(r"^Number of indices in(?: \([^)]+\))? set (\d+)$")
 L2G_RANGE_RE = re.compile(r"^(\d+):(\d+)\s+(\d+):(\d+)$")
+MAP_ENTRY_RE = re.compile(r"^\[(\d+)\]\s+\[([^\]]+)\]\s*(.*)$")
 
 
 class ValidationError(Exception):
@@ -42,6 +43,14 @@ class LocalToGlobalMapping:
     normalized: list[int]
 
 
+@dataclass(frozen=True)
+class NeighborMap:
+    process_count: int
+    sizes_by_source: dict[int, int]
+    counts_by_target: dict[int, int]
+    entries_by_target: dict[int, list[int]]
+
+
 def parse_petsc_ascii(path: Path) -> ParsedFile:
     with path.open("r", encoding="utf-8") as handle:
         lines = [line.rstrip("\n") for line in handle]
@@ -58,6 +67,8 @@ def parse_petsc_ascii(path: Path) -> ParsedFile:
         return ParsedFile("vec", parse_vec(lines, path))
     if header.startswith("ISLocalToGlobalMapping Object:"):
         return ParsedFile("l2g", parse_l2g(lines, path))
+    if header.startswith("HPDDMMap Object:"):
+        return ParsedFile("map", parse_map(lines, path))
 
     raise ValidationError(f"{path.name}: unsupported PETSc ASCII object header {header!r}")
 
@@ -239,6 +250,98 @@ def parse_l2g(lines: list[str], path: Path) -> LocalToGlobalMapping:
     return LocalToGlobalMapping(process_count=process_count, normalized=normalized)
 
 
+def parse_map(lines: list[str], path: Path) -> NeighborMap:
+    header = lines[0].strip()
+    match = re.search(r":\s+(\d+)\s+MPI process(?:es)?$", header)
+    if match is None:
+        raise ValidationError(f"{path.name}: invalid HPDDMMap header {header!r}")
+
+    process_count = int(match.group(1))
+    sizes_by_source: dict[int, int] = {}
+    counts_by_target: dict[int, int] = {}
+    by_source_target: dict[tuple[int, int], list[int]] = {}
+
+    for raw_line in lines[1:]:
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("type:"):
+            continue
+        if MPI_PROCESS_RE.search(stripped):
+            continue
+
+        entry_match = MAP_ENTRY_RE.match(stripped)
+        if entry_match is None:
+            raise ValidationError(f"{path.name}: invalid HPDDMMap entry {raw_line!r}")
+
+        source = int(entry_match.group(1))
+        header_fields = [field.strip() for field in entry_match.group(2).split(",")]
+        if len(header_fields) == 2:
+            try:
+                target = int(header_fields[0])
+                local_size = 0
+                declared_count = int(header_fields[1])
+            except ValueError as exc:
+                raise ValidationError(f"{path.name}: invalid HPDDMMap header {raw_line!r}") from exc
+        elif len(header_fields) == 3:
+            try:
+                target = int(header_fields[0])
+                local_size = int(header_fields[1])
+                declared_count = int(header_fields[2])
+            except ValueError as exc:
+                raise ValidationError(f"{path.name}: invalid HPDDMMap header {raw_line!r}") from exc
+        else:
+            raise ValidationError(f"{path.name}: invalid HPDDMMap header {raw_line!r}")
+
+        payload = entry_match.group(3).strip()
+        tokens = payload.split() if payload else []
+        if len(tokens) != declared_count:
+            raise ValidationError(
+                f"{path.name}: target {target} declared {declared_count} entries "
+                f"but parsed {len(tokens)} in {raw_line!r}"
+            )
+
+        try:
+            entries = [int(token) for token in tokens]
+        except ValueError as exc:
+            raise ValidationError(f"{path.name}: invalid HPDDMMap payload {raw_line!r}") from exc
+
+        if source in sizes_by_source and local_size and sizes_by_source[source] != local_size:
+            raise ValidationError(
+                f"{path.name}: inconsistent local size for source {source}: "
+                f"{sizes_by_source[source]} != {local_size}"
+            )
+        if local_size:
+            sizes_by_source[source] = local_size
+        else:
+            sizes_by_source.setdefault(source, 0)
+        counts_by_target[target] = counts_by_target.get(target, 0) + declared_count
+        by_source_target.setdefault((source, target), []).extend(entries)
+
+    if not by_source_target:
+        raise ValidationError(f"{path.name}: no HPDDMMap entries found")
+
+    shifts: dict[int, int] = {}
+    offset = 0
+    for source in sorted(sizes_by_source):
+      shifts[source] = offset
+      offset += sizes_by_source[source]
+
+    entries_by_target: dict[int, list[int]] = {}
+    for (source, target), entries in by_source_target.items():
+        shifted = [value + shifts[source] for value in entries]
+        entries_by_target.setdefault(target, []).extend(shifted)
+    for target_entries in entries_by_target.values():
+        target_entries.sort()
+
+    return NeighborMap(
+        process_count=process_count,
+        sizes_by_source=sizes_by_source,
+        counts_by_target=counts_by_target,
+        entries_by_target=entries_by_target,
+    )
+
+
 def compare_parsed(
     left: ParsedFile,
     right: ParsedFile,
@@ -257,6 +360,8 @@ def compare_parsed(
         return compare_vecs(left.payload, right.payload, rel_tol, abs_tol)
     if left.kind == "l2g":
         return compare_l2g(left.payload, right.payload, left_classifier_1, right_classifier_1)
+    if left.kind == "map":
+        return compare_maps(left.payload, right.payload)
     return f"unsupported parsed kind {left.kind!r}"
 
 
@@ -321,6 +426,41 @@ def compare_l2g(
                 f"normalized mapping mismatch at global-local index {i}: "
                 f"{left_value} != {right_value}"
             )
+    return None
+
+
+def compare_maps(left: NeighborMap, right: NeighborMap) -> str | None:
+    left_targets = set(left.entries_by_target)
+    right_targets = set(right.entries_by_target)
+    if left_targets != right_targets:
+        missing_left = sorted(right_targets - left_targets)
+        missing_right = sorted(left_targets - right_targets)
+        details: list[str] = []
+        if missing_left:
+            details.append(f"missing targets in left: {missing_left}")
+        if missing_right:
+            details.append(f"missing targets in right: {missing_right}")
+        return "; ".join(details)
+
+    for target in sorted(left_targets):
+        left_count = left.counts_by_target[target]
+        right_count = right.counts_by_target[target]
+        if left_count != right_count:
+            return f"target {target} total entry count mismatch: {left_count} != {right_count}"
+        left_entries = left.entries_by_target[target]
+        right_entries = right.entries_by_target[target]
+        if left_entries != right_entries:
+            if len(left_entries) != len(right_entries):
+                return (
+                    f"target {target} normalized entry length mismatch: "
+                    f"{len(left_entries)} != {len(right_entries)}"
+                )
+            for i, (left_value, right_value) in enumerate(zip(left_entries, right_entries)):
+                if left_value != right_value:
+                    return (
+                        f"target {target} normalized entry mismatch at {i}: "
+                        f"{left_value} != {right_value}"
+                    )
     return None
 
 
